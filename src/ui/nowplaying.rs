@@ -1582,6 +1582,9 @@ pub(super) struct CoverClip {
     frame: Option<(egui::TextureHandle, f64)>,
     /// Another size the cover has kept since (s), to play at once it has settled.
     resized: Option<(u32, f64)>,
+    /// When the cover's colours were last taken from a frame (s). The clip overlays the
+    /// still art, so without this the app keeps the still cover's colours.
+    art_at: f64,
 }
 
 /// The animated cover's latest frame, and how far it has faded in. Keeps the clip in step
@@ -1592,7 +1595,7 @@ fn cover_clip(app: &mut App, ctx: &egui::Context, track: &crate::model::Track, p
         return None;
     }
     if app.cover_clip.as_ref().is_none_or(|c| c.id != track.id) {
-        app.cover_clip = Some(CoverClip { id: track.id.clone(), px: px.max(1), url: None, player: None, frame: None, resized: None });
+        app.cover_clip = Some(CoverClip { id: track.id.clone(), px: px.max(1), url: None, player: None, frame: None, resized: None, art_at: -10.0 });
         app.backend.request(crate::backend::Req::Canvas(track.clone()));
     }
     let playing = app.playing();
@@ -1618,7 +1621,19 @@ fn cover_clip(app: &mut App, ctx: &egui::Context, track: &crate::model::Track, p
         c.resized = None;
     }
     let player = c.player.as_mut().filter(|p| !p.failed())?;
+    // The clip overlays the still cover, so its colours ought to lead: a song's single and
+    // album covers differ, and the clip is what's on screen. Sampled a few times a second,
+    // the way a music video feeds the background.
+    let blur_passes = crate::preset::active().background.blur_passes;
+    let mut new_art: Option<crate::art::Art> = None;
     if let Some(f) = player.take_due(now, playing) {
+        if now - c.art_at > 0.25 {
+            if let Some(mut art) = crate::art::from_frame(&f.image) {
+                crate::art::soften(&mut art, blur_passes.saturating_sub(6));
+                new_art = Some(art);
+            }
+            c.art_at = now;
+        }
         match &mut c.frame {
             Some((tex, _)) => tex.set(f.image, egui::TextureOptions::LINEAR),
             None => c.frame = Some((ctx.load_texture("cover-clip", f.image, egui::TextureOptions::LINEAR), now)),
@@ -1632,7 +1647,17 @@ fn cover_clip(app: &mut App, ctx: &egui::Context, track: &crate::model::Track, p
     } else if shown < 1.0 {
         super::pace::repaint_after(ctx, std::time::Duration::from_millis(16));
     }
-    c.frame.as_ref().map(|(tex, _)| (tex.clone(), shown))
+    let out = c.frame.as_ref().map(|(tex, _)| (tex.clone(), shown));
+    // `c` is no longer touched past here, so `app.accent` and `app.bg` can be taken hold of
+    // without fighting the borrow on `app.cover_clip`.
+    if let Some(art) = new_art {
+        app.accent = art.accent;
+        app.art_brightness = art.brightness;
+        if let Some(bg) = &app.bg {
+            bg.set_live(art);
+        }
+    }
+    out
 }
 
 /// Play videos at most `height` tall, the one on show too: it carries on from where the

@@ -70,12 +70,16 @@ pub fn from_frame(frame: &egui::ColorImage) -> Option<Art> {
             px.push([c.r() as f32, c.g() as f32, c.b() as f32]);
         }
     }
+    // The accent comes from the un-blurred samples, the way `process` reads the small image
+    // before its tint and blur passes: a frame's colours move, so this is what the cover
+    // is, not the still art underneath it.
+    let accent = palette_pixels(&px);
     let brightness = px.iter().map(|p| (0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2]) / 255.0).sum::<f32>() / px.len() as f32;
     for _ in 0..2 {
         px = box_blur(&px, n, 4);
     }
     let rgba = px.iter().flat_map(|p| [p[0] as u8, p[1] as u8, p[2] as u8, 255]).collect();
-    Some(Art { rgba, accent: Color32::WHITE, brightness })
+    Some(Art { rgba, accent, brightness })
 }
 
 fn smoothstep(a: f32, b: f32, x: f32) -> f32 {
@@ -112,10 +116,17 @@ fn box_blur(src: &[[f32; 3]], n: usize, r: usize) -> Vec<[f32; 3]> {
 
 /// The most vivid colour (falling back to the average for greyscale covers).
 fn palette(img: &image::RgbImage) -> Color32 {
+    let px: Vec<[f32; 3]> = img.pixels().map(|p| [p[0] as f32, p[1] as f32, p[2] as f32]).collect();
+    palette_pixels(&px)
+}
+
+/// `palette` over a flat list of pixels in 0..255 RGB, so a video frame (no `RgbImage`)
+/// can ask the same question.
+fn palette_pixels(px: &[[f32; 3]]) -> Color32 {
     let (mut sum, mut n) = ([0.0f32; 3], 0.0f32);
     let mut best = (0.0f32, [200.0, 60.0, 80.0]);
-    for p in img.pixels() {
-        let rgb = [p[0] as f32 / 255.0, p[1] as f32 / 255.0, p[2] as f32 / 255.0];
+    for p in px {
+        let rgb = [p[0] / 255.0, p[1] / 255.0, p[2] / 255.0];
         for c in 0..3 {
             sum[c] += rgb[c];
         }
