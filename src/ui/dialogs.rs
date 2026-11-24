@@ -77,7 +77,7 @@ impl App {
         // content shrinks, so a small dialog opened over a big one (the duplicate
         // confirmation after "Add to playlist") would otherwise inherit the stale, taller
         // rect and draw with a large empty gap below its buttons.
-        let modal_id = egui::Id::new((
+        let modal_id = egui::Id::unique((
             "playlist-dialog",
             match &dialog {
                 Dialog::PickPlaylist(_) => 0,
