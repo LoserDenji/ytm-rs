@@ -124,7 +124,10 @@ pub enum Req {
     EditPlaylist { id: String, title: String, description: String, privacy: Option<String> },
     /// Save one of your playlist's sort orders to it ([`PlaylistSort::actions`]).
     SortPlaylist { id: String, actions: serde_json::Value },
-    AddToPlaylist { playlist_id: String, video_ids: Vec<String> },
+    AddToPlaylist { playlist_id: String, video_ids: Vec<String>, again: bool },
+    /// Which of the songs are already in the playlist, asked before an add puts them in
+    /// twice; the songs ride along for the add that follows the answer.
+    PlaylistContains { playlist_id: String, video_ids: Vec<String>, tracks: Vec<Track> },
     /// `(videoId, setVideoId)` entries to take out of the playlist.
     RemoveFromPlaylist { playlist_id: String, items: Vec<(String, String)> },
     /// Move an entry to just before another, or to the end.
@@ -182,7 +185,7 @@ impl Req {
             Req::CreatePlaylist { .. } => crate::tr!("transfer-create-playlist"),
             Req::EditPlaylist { .. } => crate::tr!("dialog-edit-playlist"),
             Req::SortPlaylist { .. } => crate::tr!("ui-sort"),
-            Req::AddToPlaylist { .. } => crate::tr!("ui-add-playlist"),
+            Req::AddToPlaylist { .. } | Req::PlaylistContains { .. } => crate::tr!("ui-add-playlist"),
             Req::RemoveFromPlaylist { .. } => crate::tr!("ui-remove-playlist"),
             Req::MoveInPlaylist { .. } => crate::tr!("backend-move-playlist"),
             Req::DeletePlaylist(_) => crate::tr!("dialog-delete-playlist"),
@@ -444,6 +447,9 @@ pub enum Resp {
     /// A playlist wasn't deleted, though it's left the library here already.
     DeleteFailed { error: String },
     AddedToPlaylist { id: String, video_ids: Vec<String>, error: Option<String> },
+    /// The songs already in the playlist, with the ones picked for it waiting on the
+    /// "Add anyway" question.
+    PlaylistContains { playlist_id: String, tracks: Vec<Track>, present: Vec<String> },
     /// YouTube Music answered a song dragged to a new place.
     PlaylistMoved { id: String, move_id: u64, ok: bool },
     Collaboration(ytm::Collaboration),
@@ -485,6 +491,7 @@ impl Resp {
                 | Resp::LikeProgress { .. }
                 | Resp::LikedMany { .. }
                 | Resp::AddedToPlaylist { .. }
+                | Resp::PlaylistContains { .. }
                 | Resp::Artist(_)
                 | Resp::Subscribed { .. }
         )
@@ -1370,9 +1377,18 @@ impl Backend {
                         Resp::PlaylistChanged { id, change: PlaylistChange::SortFailed }
                     }
                 },
-                Req::AddToPlaylist { playlist_id, video_ids } => {
+                Req::PlaylistContains { playlist_id, video_ids, tracks } => {
+                    // An unreadable list answers none in it: the add goes ahead, and the
+                    // skip it asks YouTube Music for keeps a repeat out anyway.
+                    let present = ytm::playlist_contains(api, &playlist_id, &video_ids, me).await.unwrap_or_else(|e| {
+                        log::warn!("checking {what} for songs already in it failed: {e:#}");
+                        Vec::new()
+                    });
+                    Resp::PlaylistContains { playlist_id, tracks, present }
+                }
+                Req::AddToPlaylist { playlist_id, video_ids, again } => {
                     // A failure says which songs too, so they stop showing in the playlist.
-                    let error = ytm::add_videos(api, &playlist_id, &video_ids).await.err().map(|e| {
+                    let error = ytm::add_videos(api, &playlist_id, &video_ids, again).await.err().map(|e| {
                         log::warn!("{what} failed: {e:#}");
                         format!("{what} failed: {e}")
                     });

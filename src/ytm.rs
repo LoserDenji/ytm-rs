@@ -1850,11 +1850,30 @@ pub async fn create_playlist_with(api: &Api, title: &str, video_ids: &[String]) 
     value["playlistId"].as_str().map(str::to_owned).ok_or_else(|| anyhow::anyhow!("YouTube Music did not return a playlist"))
 }
 
-/// Add songs to a playlist in one request, skipping any already in it.
-pub async fn add_videos(api: &Api, playlist_id: &str, video_ids: &[String]) -> anyhow::Result<()> {
-    let actions: Vec<Value> = video_ids.iter().map(|v| json!({"action": "ACTION_ADD_VIDEO", "addedVideoId": v, "dedupeOption": "DEDUPE_OPTION_SKIP"})).collect();
+/// Add songs to a playlist in one request, skipping any already in it (`again`: even
+/// those, as an "Add anyway" answer wants the repeats in).
+pub async fn add_videos(api: &Api, playlist_id: &str, video_ids: &[String], again: bool) -> anyhow::Result<()> {
+    // YouTube Music only skips a repeat when told to, and only puts one in when told to.
+    let dedupe = if again { "DEDUPE_OPTION_ADD" } else { "DEDUPE_OPTION_SKIP" };
+    let actions: Vec<Value> = video_ids.iter().map(|v| json!({"action": "ACTION_ADD_VIDEO", "addedVideoId": v, "dedupeOption": dedupe})).collect();
     write(api, "browse/edit_playlist", json!({"playlistId": playlist_id, "actions": actions})).await?;
     Ok(())
+}
+
+/// Which of the songs are already among a playlist's entries, asked before an add that
+/// would put them in twice. At most the first 2,000 entries are read: whole for a
+/// playlist anyone adds to by hand, and past that the add's own skip of a repeat is
+/// what keeps it out. A mix never ends, but only a playlist of the account's can be
+/// added to, and its own cap holds.
+pub async fn playlist_contains(api: &Api, id: &str, video_ids: &[String], auth: bool) -> anyhow::Result<Vec<String>> {
+    let pl = playlist(api, id, auth, Some(2000)).await?;
+    let mut found = Vec::new();
+    for t in pl.tracks {
+        if video_ids.contains(&t.id) && !found.contains(&t.id) {
+            found.push(t.id);
+        }
+    }
+    Ok(found)
 }
 
 pub async fn edit_playlist(api: &Api, id: &str, title: &str, description: &str, privacy: Option<&str>) -> anyhow::Result<()> {

@@ -67,13 +67,20 @@ impl App {
         }
     }
 
-    /// Add songs to one of the account's playlists. They show in it at once, even while
-    /// YouTube Music goes on listing it without them.
+    /// Add songs to one of the account's playlists. What's already in it is asked first,
+    /// as the website does, so the answer can hold them back (see [`super::Dialog::AddDuplicate`]).
     pub(super) fn add_to_playlist(&mut self, playlist_id: String, tracks: &[Track]) {
-        self.lists.added(&playlist_id, tracks);
-        self.sync_card_count(&playlist_id);
         let video_ids = tracks.iter().map(|t| t.id.clone()).collect();
-        self.backend.request(Req::AddToPlaylist { playlist_id, video_ids });
+        self.backend.request(Req::PlaylistContains { playlist_id, video_ids, tracks: tracks.to_vec() });
+    }
+
+    /// The songs are going in: they show in it at once, even while YouTube Music goes on
+    /// listing it without them.
+    pub(super) fn start_add(&mut self, playlist_id: &str, tracks: &[Track], again: bool) {
+        self.lists.added(playlist_id, tracks);
+        self.sync_card_count(playlist_id);
+        let video_ids = tracks.iter().map(|t| t.id.clone()).collect();
+        self.backend.request(Req::AddToPlaylist { playlist_id: playlist_id.to_owned(), video_ids, again });
     }
 
     /// The sidebar's and Library's playlist cards ("Suko • 4 tracks") count what YouTube

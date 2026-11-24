@@ -563,6 +563,15 @@ impl App {
                 }
                 self.on_error(e);
             }
+            Resp::PlaylistContains { playlist_id, tracks, present } => {
+                // The playlist has some of the songs: ask, as the website does, before
+                // putting them in twice. Nothing shows in it before one of the answers.
+                if present.is_empty() {
+                    self.start_add(&playlist_id, &tracks, false);
+                } else {
+                    self.dialog = Some(Dialog::AddDuplicate { playlist_id, tracks, present });
+                }
+            }
             Resp::PlaylistMoved { id, move_id, ok } => {
                 // Not for moves of an account or channel left since.
                 if !ok && self.lists.awaiting_move(&id, move_id) {

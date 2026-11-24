@@ -70,6 +70,7 @@ impl App {
             Dialog::ConfirmDeleteUpload { .. } => crate::tr!("dialog-delete-upload"),
             Dialog::ConfirmClearCache => crate::tr!("settings-clear-cache"),
             Dialog::ConfirmDownload { .. } => crate::tr!("settings-download"),
+            Dialog::AddDuplicate { present, .. } => &crate::tr!("dialog-song-in-playlist", count = present.len()),
             Dialog::Collaborate { .. } => crate::tr!("ui-collaborate"),
         };
         // The same modal card as "Delete playlist?" and the update dialog.
@@ -144,6 +145,15 @@ impl App {
                         if ok {
                             let (target, title, tracks) = (target.clone(), title.clone(), Some(std::mem::take(tracks)));
                             self.backend.request(Req::DownloadMany { target, title, tracks, confirmed: true });
+                        }
+                        done = ok || cancel;
+                    }
+                    Dialog::AddDuplicate { playlist_id, tracks, present } => {
+                        ui.add(egui::Label::new(egui::RichText::new(crate::tr!("dialog-song-in-playlist-body", count = present.len())).font(theme::regular(14.0)).color(theme::text_dim())).wrap());
+                        ui.add_space(22.0);
+                        let (ok, cancel) = dialog_buttons(ui, crate::tr!("dialog-add-anyway"), true, accent);
+                        if ok {
+                            self.start_add(playlist_id, tracks, true);
                         }
                         done = ok || cancel;
                     }

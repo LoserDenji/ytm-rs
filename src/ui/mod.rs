@@ -314,6 +314,9 @@ enum Dialog {
     ConfirmClearCache,
     /// A large download (`count` songs to go) asked about before it starts.
     ConfirmDownload { target: Option<Target>, title: String, tracks: Vec<Track>, count: usize },
+    /// Songs picked for a playlist that has some of them already (`present`), asked
+    /// about first: "Add anyway" puts the repeats in, as the website's answer does.
+    AddDuplicate { playlist_id: String, tracks: Vec<Track>, present: Vec<String> },
     /// `info` until it loads; `busy` while a change is on its way; `confirm_off` asks
     /// before turning collaboration off (that removes the collaborators).
     Collaborate { id: String, info: Option<crate::ytm::Collaboration>, busy: bool, confirm_off: bool },
